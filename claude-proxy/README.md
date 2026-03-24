@@ -177,6 +177,10 @@ src/
     errors.ts           # Custom error types
 ```
 
+## Contact
+
+For any questions, feel free to reach out on Discord: **edoquellovero.**
+
 ## Disclaimer
 
 This project is meant for **personal use and development only**. It is not designed for production. It relies on Claude Code's consumer account authentication, which has strict rate limits and usage policies. Use responsibly and in accordance with [Anthropic's Terms of Service](https://www.anthropic.com/terms).
