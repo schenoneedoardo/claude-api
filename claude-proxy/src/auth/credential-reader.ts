@@ -15,7 +15,7 @@ export interface ClaudeCredentials {
   expiresAt?: number;
 }
 
-/** Attempt to read Claude Code's stored credentials */
+
 export async function readClaudeCredentials(): Promise<ClaudeCredentials | null> {
   for (const path of CREDENTIAL_PATHS) {
     try {
@@ -29,7 +29,7 @@ export async function readClaudeCredentials(): Promise<ClaudeCredentials | null>
         expiresAt: data.expiresAt as number | undefined,
       };
     } catch {
-      // File not found or unreadable — try next path
+
     }
   }
   logger.debug("No Claude credentials file found");

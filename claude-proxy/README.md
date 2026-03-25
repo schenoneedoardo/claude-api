@@ -302,6 +302,6 @@ MIT
 
 <br/>
 
-Made with 🔮 by leveraging Claude Code
+Made with 🔮 by edo and Claude Code
 
 </div>
