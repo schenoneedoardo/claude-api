@@ -1,7 +1,7 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { config } from "../config/index.js";
 import { logger } from "../utils/logger.js";
-import { ProviderError } from "../utils/errors.js";
+import { ProviderError, TimeoutError } from "../utils/errors.js";
 import type { Provider, StreamChunkCallback } from "./base.js";
 import type { MessagesRequest, MessagesResponse } from "../mappers/request-mapper.js";
 import { buildPromptFromMessages } from "../mappers/request-mapper.js";
@@ -11,6 +11,12 @@ import {
   type CliStreamChunk,
 } from "../mappers/response-mapper.js";
 import { randomUUID } from "node:crypto";
+
+/** Kill a child process and reject with TimeoutError */
+function killWithTimeout(proc: ChildProcess, reject: (err: Error) => void): void {
+  proc.kill("SIGTERM");
+  reject(new TimeoutError(`CLI process timed out after ${config.requestTimeoutMs}ms`));
+}
 
 export class CliWrapperProvider implements Provider {
   readonly name = "cli-wrapper";
@@ -49,10 +55,16 @@ export class CliWrapperProvider implements Provider {
     logger.debug({ args, promptLength: prompt.length }, "Spawning Claude CLI (stream)");
 
     return new Promise<MessagesResponse>((resolve, reject) => {
+      let settled = false;
+      const safeReject = (err: Error) => { if (!settled) { settled = true; reject(err); } };
+      const safeResolve = (val: MessagesResponse) => { if (!settled) { settled = true; resolve(val); } };
+
       const proc = spawn(config.claudeCliPath, args, {
         stdio: ["pipe", "pipe", "pipe"],
         shell: true,
       });
+
+      const timeout = setTimeout(() => killWithTimeout(proc, safeReject), config.requestTimeoutMs);
 
       let fullText = "";
       let lastChunk: CliStreamChunk | undefined;
@@ -105,8 +117,10 @@ export class CliWrapperProvider implements Provider {
       });
 
       proc.on("close", (code) => {
+        clearTimeout(timeout);
+
         if (code !== 0 && !lastChunk) {
-          reject(new ProviderError(`CLI exited with code ${code}: ${stderr.slice(0, 500)}`));
+          safeReject(new ProviderError(`CLI exited with code ${code}: ${stderr.slice(0, 500)}`));
           return;
         }
 
@@ -118,7 +132,7 @@ export class CliWrapperProvider implements Provider {
           output_tokens: lastChunk?.usage?.output_tokens ?? 0,
         };
 
-        resolve({
+        safeResolve({
           id: `msg_${randomUUID().replace(/-/g, "")}`,
           type: "message",
           role: "assistant",
@@ -130,7 +144,8 @@ export class CliWrapperProvider implements Provider {
       });
 
       proc.on("error", (err) => {
-        reject(new ProviderError(`Failed to spawn CLI: ${err.message}`));
+        clearTimeout(timeout);
+        safeReject(new ProviderError(`Failed to spawn CLI: ${err.message}`));
       });
     });
   }
@@ -143,16 +158,39 @@ export class CliWrapperProvider implements Provider {
     if (request.model) {
       args.push("--model", request.model);
     }
+    if (request.max_tokens) {
+      args.push("--max-turns", String(request.max_tokens));
+    }
+    if (request.temperature !== undefined) {
+      args.push("--temperature", String(request.temperature));
+    }
+    if (request.top_p !== undefined) {
+      args.push("--top-p", String(request.top_p));
+    }
+    if (request.top_k !== undefined) {
+      args.push("--top-k", String(request.top_k));
+    }
+    if (request.stop_sequences?.length) {
+      for (const seq of request.stop_sequences) {
+        args.push("--stop-sequence", seq);
+      }
+    }
     return args;
   }
 
   /** Spawn the Claude CLI and collect all stdout */
   private spawnClaude(args: string[], stdinData: string): Promise<string> {
     return new Promise((resolve, reject) => {
+      let settled = false;
+      const safeReject = (err: Error) => { if (!settled) { settled = true; reject(err); } };
+      const safeResolve = (val: string) => { if (!settled) { settled = true; resolve(val); } };
+
       const proc = spawn(config.claudeCliPath, args, {
         stdio: ["pipe", "pipe", "pipe"],
         shell: true,
       });
+
+      const timeout = setTimeout(() => killWithTimeout(proc, safeReject), config.requestTimeoutMs);
 
       let stdout = "";
       let stderr = "";
@@ -169,19 +207,21 @@ export class CliWrapperProvider implements Provider {
       });
 
       proc.on("close", (code) => {
+        clearTimeout(timeout);
         if (code !== 0) {
-          reject(
+          safeReject(
             new ProviderError(
               `CLI exited with code ${code}: ${stderr.slice(0, 500)}`,
             ),
           );
           return;
         }
-        resolve(stdout.trim());
+        safeResolve(stdout.trim());
       });
 
       proc.on("error", (err) => {
-        reject(new ProviderError(`Failed to spawn CLI: ${err.message}`));
+        clearTimeout(timeout);
+        safeReject(new ProviderError(`Failed to spawn CLI: ${err.message}`));
       });
     });
   }

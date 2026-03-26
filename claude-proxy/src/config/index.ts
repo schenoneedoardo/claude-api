@@ -1,7 +1,7 @@
 import { config as dotenvConfig } from "dotenv";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { writeFileSync, readFileSync } from "node:fs";
+import { writeFileSync, readFileSync, renameSync } from "node:fs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ENV_PATH = resolve(__dirname, "../../.env");
@@ -125,5 +125,7 @@ export function updateConfig(
     }
   }
 
-  writeFileSync(ENV_PATH, lines.join("\n"), "utf-8");
+  const tmpPath = ENV_PATH + ".tmp";
+  writeFileSync(tmpPath, lines.join("\n"), "utf-8");
+  renameSync(tmpPath, ENV_PATH);
 }

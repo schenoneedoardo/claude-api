@@ -1,8 +1,22 @@
+import { execSync } from "node:child_process";
 import { config } from "./config/index.js";
 import { logger } from "./utils/logger.js";
 import { buildServer } from "./server.js";
 
+function checkCliAvailable(): void {
+  try {
+    execSync(`${config.claudeCliPath} --version`, { stdio: "pipe", timeout: 10_000 });
+    logger.info({ cli: config.claudeCliPath }, "Claude CLI found");
+  } catch {
+    logger.warn(
+      { cli: config.claudeCliPath },
+      "Claude CLI not found or not responding. Requests will fail until CLI is available.",
+    );
+  }
+}
+
 async function main(): Promise<void> {
+  checkCliAvailable();
   const app = await buildServer();
 
   // Graceful shutdown

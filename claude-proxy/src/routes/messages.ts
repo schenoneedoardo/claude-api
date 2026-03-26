@@ -1,10 +1,12 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import { randomUUID } from "node:crypto";
 import { logger } from "../utils/logger.js";
 import { ValidationError, ProxyError } from "../utils/errors.js";
 import { requestQueue } from "../queue/request-queue.js";
 import { SSEHandler } from "../streaming/sse-handler.js";
 import type { Provider } from "../providers/base.js";
 import type { MessagesRequest } from "../mappers/request-mapper.js";
+import { AVAILABLE_MODELS } from "./models.js";
 
 export async function messagesRoutes(
   app: FastifyInstance,
@@ -17,6 +19,7 @@ export async function messagesRoutes(
       reply: FastifyReply,
     ) => {
       const body = req.body;
+      const requestId = randomUUID().slice(0, 8);
 
       // Validate required fields
       if (!body.model) {
@@ -29,7 +32,28 @@ export async function messagesRoutes(
         throw new ValidationError("'messages' must be a non-empty array");
       }
 
+      // Validate model against known models
+      const validModelIds = AVAILABLE_MODELS.map((m) => m.id);
+      if (!validModelIds.includes(body.model)) {
+        throw new ValidationError(
+          `Unknown model '${body.model}'. Available: ${validModelIds.join(", ")}`,
+        );
+      }
+
+      // Check for unsupported image content blocks
+      for (const msg of body.messages) {
+        if (typeof msg.content !== "string") {
+          const hasImage = msg.content.some((b) => b.type === "image");
+          if (hasImage) {
+            throw new ValidationError(
+              "Image content blocks are not supported. Please use text-only messages.",
+            );
+          }
+        }
+      }
+
       const startTime = Date.now();
+      logger.info({ requestId, model: body.model, stream: !!body.stream }, "Request received");
 
       if (body.stream) {
         // --- Streaming response ---
@@ -54,6 +78,7 @@ export async function messagesRoutes(
 
           logger.info(
             {
+              requestId,
               model: body.model,
               durationMs: Date.now() - startTime,
               outputTokens: response.usage.output_tokens,
@@ -83,7 +108,7 @@ export async function messagesRoutes(
           }
 
           logger.error(
-            { err, model: body.model, durationMs: Date.now() - startTime },
+            { requestId, err, model: body.model, durationMs: Date.now() - startTime },
             "Streaming request failed",
           );
         }
@@ -98,6 +123,7 @@ export async function messagesRoutes(
 
         logger.info(
           {
+            requestId,
             model: body.model,
             durationMs: Date.now() - startTime,
             inputTokens: response.usage.input_tokens,

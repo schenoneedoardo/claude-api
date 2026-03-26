@@ -120,7 +120,13 @@ export class SSEHandler {
     return this.started;
   }
 
+  /** Check if the client is still connected */
+  get isConnected(): boolean {
+    return !this.reply.raw.writableEnded && !this.reply.raw.destroyed;
+  }
+
   private sendEvent(event: string, data: unknown): void {
+    if (!this.isConnected) return;
     this.reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   }
 }

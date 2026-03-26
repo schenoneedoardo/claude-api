@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 
-const AVAILABLE_MODELS = [
+export const AVAILABLE_MODELS = [
   {
     id: "claude-opus-4-20250514",
     display_name: "Claude Opus 4",

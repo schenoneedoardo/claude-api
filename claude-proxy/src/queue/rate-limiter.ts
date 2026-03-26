@@ -70,6 +70,7 @@ export class CircuitBreaker {
   private failures = 0;
   private state: "closed" | "open" | "half-open" = "closed";
   private openedAt = 0;
+  private probeInFlight = false;
 
   constructor(
     private readonly threshold: number = config.circuitBreakerThreshold,
@@ -82,20 +83,25 @@ export class CircuitBreaker {
 
     if (this.state === "open") {
       if (Date.now() - this.openedAt >= this.cooldownMs) {
+        // Transition to half-open, but only allow one probe
         this.state = "half-open";
+        this.probeInFlight = true;
         logger.info("Circuit breaker: half-open, allowing probe request");
         return true;
       }
       return false;
     }
 
-    // half-open: allow one probe
+    // half-open: only allow if no probe is already in flight
+    if (this.probeInFlight) return false;
+    this.probeInFlight = true;
     return true;
   }
 
   /** Report a successful request */
   recordSuccess(): void {
     this.failures = 0;
+    this.probeInFlight = false;
     if (this.state !== "closed") {
       logger.info("Circuit breaker: closed (recovered)");
       this.state = "closed";
@@ -105,6 +111,7 @@ export class CircuitBreaker {
   /** Report a failed request */
   recordFailure(): void {
     this.failures++;
+    this.probeInFlight = false;
     if (this.failures >= this.threshold && this.state !== "open") {
       this.state = "open";
       this.openedAt = Date.now();
