@@ -74,12 +74,12 @@ export async function messagesRoutes(
               type: proxyErr.type,
               message: proxyErr.message,
             });
-          } else {
-            // SSE not started yet, can still send normal error
-            reply.raw.writeHead(proxyErr.statusCode, {
-              "Content-Type": "application/json",
-            });
-            reply.raw.end(JSON.stringify(proxyErr.toJSON()));
+          } else if (!reply.sent) {
+            // SSE not started yet, can still send normal error via Fastify
+            return reply
+              .code(proxyErr.statusCode)
+              .header("Content-Type", "application/json")
+              .send(proxyErr.toJSON());
           }
 
           logger.error(

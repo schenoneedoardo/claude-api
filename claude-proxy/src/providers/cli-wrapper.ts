@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { config } from "../config/index.js";
 import { logger } from "../utils/logger.js";
-import { ProviderError, TimeoutError } from "../utils/errors.js";
+import { ProviderError } from "../utils/errors.js";
 import type { Provider, StreamChunkCallback } from "./base.js";
 import type { MessagesRequest, MessagesResponse } from "../mappers/request-mapper.js";
 import { buildPromptFromMessages } from "../mappers/request-mapper.js";
@@ -58,11 +58,6 @@ export class CliWrapperProvider implements Provider {
       let lastChunk: CliStreamChunk | undefined;
       let stderr = "";
 
-      const timeout = setTimeout(() => {
-        proc.kill("SIGTERM");
-        reject(new TimeoutError());
-      }, config.requestTimeoutMs);
-
       proc.stdin.write(prompt);
       proc.stdin.end();
 
@@ -110,8 +105,6 @@ export class CliWrapperProvider implements Provider {
       });
 
       proc.on("close", (code) => {
-        clearTimeout(timeout);
-
         if (code !== 0 && !lastChunk) {
           reject(new ProviderError(`CLI exited with code ${code}: ${stderr.slice(0, 500)}`));
           return;
@@ -137,14 +130,13 @@ export class CliWrapperProvider implements Provider {
       });
 
       proc.on("error", (err) => {
-        clearTimeout(timeout);
         reject(new ProviderError(`Failed to spawn CLI: ${err.message}`));
       });
     });
   }
 
   private buildArgs(request: MessagesRequest, outputFormat: "json" | "stream-json"): string[] {
-    const args = ["-p", "--output-format", outputFormat];
+    const args = ["-p", "--output-format", outputFormat, "--dangerously-skip-permissions"];
     if (outputFormat === "stream-json") {
       args.push("--verbose");
     }
@@ -165,11 +157,6 @@ export class CliWrapperProvider implements Provider {
       let stdout = "";
       let stderr = "";
 
-      const timeout = setTimeout(() => {
-        proc.kill("SIGTERM");
-        reject(new TimeoutError());
-      }, config.requestTimeoutMs);
-
       proc.stdin.write(stdinData);
       proc.stdin.end();
 
@@ -182,7 +169,6 @@ export class CliWrapperProvider implements Provider {
       });
 
       proc.on("close", (code) => {
-        clearTimeout(timeout);
         if (code !== 0) {
           reject(
             new ProviderError(
@@ -195,7 +181,6 @@ export class CliWrapperProvider implements Provider {
       });
 
       proc.on("error", (err) => {
-        clearTimeout(timeout);
         reject(new ProviderError(`Failed to spawn CLI: ${err.message}`));
       });
     });
